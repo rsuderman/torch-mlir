@@ -396,10 +396,8 @@ func.func @torch.aten.view$to_rank0(%arg0: !torch.vtensor<[1],f32>) -> !torch.vt
 
 // CHECK-LABEL:  func.func @torch.aten.squeeze.dim$0$static(
 // CHECK-SAME:         %[[ARG0:.*]]: !torch.vtensor<[2,1,2,1,2],f32>) -> !torch.vtensor<[2,1,2,1,2],f32> {
-// CHECK:         %[[T0:.*]] = torch_c.to_builtin_tensor %[[ARG0]] : !torch.vtensor<[2,1,2,1,2],f32> -> tensor<2x1x2x1x2xf32>
 // CHECK:         %[[INT0:.*]] = torch.constant.int 0
-// CHECK:         %[[T1:.*]] = torch_c.from_builtin_tensor %[[T0]] : tensor<2x1x2x1x2xf32> -> !torch.vtensor<[2,1,2,1,2],f32>
-// CHECK:         return %[[T1]] : !torch.vtensor<[2,1,2,1,2],f32>
+// CHECK:         return %[[ARG0]] : !torch.vtensor<[2,1,2,1,2],f32>
 func.func @torch.aten.squeeze.dim$0$static(%arg0: !torch.vtensor<[2,1,2,1,2],f32>) -> !torch.vtensor<[2,1,2,1,2],f32> {
   %int0 = torch.constant.int 0
   %0 = torch.aten.squeeze.dim %arg0, %int0 : !torch.vtensor<[2,1,2,1,2],f32>, !torch.int -> !torch.vtensor<[2,1,2,1,2],f32>
