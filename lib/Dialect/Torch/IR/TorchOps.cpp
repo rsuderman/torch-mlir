@@ -2900,11 +2900,55 @@ OpFoldResult AtenSubIntOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult AtenCatOp::fold(FoldAdaptor adaptor) {
   auto list = getOperand(0).getDefiningOp<PrimListConstructOp>();
-  if (!list || !list->hasOneUse() || list.getElements().size() != 1)
+  if (!list)
     return nullptr;
-  if (list.getElements()[0].getType() != getResult().getType())
+
+  auto elements = list.getElements();
+  if (elements.size() == 1 && elements[0].getType() == getResult().getType())
+    return list.getElements()[0];
+
+  auto resultTy = dyn_cast<ValueTensorType>(getType());
+  if (!resultTy || !resultTy.hasSizes() || !resultTy.hasDtype())
     return nullptr;
-  return list.getElements()[0];
+
+  auto bResultTy = resultTy.toBuiltinTensor();
+  if (!bResultTy.hasStaticShape() || bResultTy.getNumElements() > 16)
+    return nullptr;
+
+  auto dimAttr = dyn_cast_or_null<IntegerAttr>(adaptor.getDim());
+  if (!dimAttr)
+    return nullptr;
+  auto dim = dimAttr.getValue().getSExtValue();
+  dim += dim < 0 ? bResultTy.getRank() : 0;
+
+  for (int i = 0, s = bResultTy.getRank(); i < s; ++i) {
+    if (i == dim)
+      continue;
+    if (bResultTy.getDimSize(i) != 1)
+      return nullptr;
+  }
+
+  llvm::SmallVector<Attribute> values;
+  for (auto operand : list.getOperands()) {
+    DenseElementsAttr dattr;
+    if (!matchPattern(operand, m_Constant(&dattr)))
+      return nullptr;
+
+    auto oty = dyn_cast<RankedTensorType>(dattr.getType());
+    if (!oty)
+      return nullptr;
+
+    if (dattr.isSplat()) {
+      for (int i = 0, s = oty.getDimSize(dim); i < s; ++i)
+        values.push_back(dattr.getSplatValue<Attribute>());
+    } else {
+      auto evals = dattr.getValues<Attribute>();
+      for (int i = 0, s = oty.getDimSize(dim); i < s; ++i)
+        values.push_back(evals[i]);
+    }
+  }
+
+  return DenseElementsAttr::get(bResultTy.clone(resultTy.getDtype()), values);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2962,23 +3006,41 @@ OpFoldResult AtenSliceTensorOp::fold(FoldAdaptor adaptor) {
         outType.toBuiltinTensor().clone(inType.getDtype()),
         input.getSplatValue<Attribute>());
 
-  // If the output is a single value we can index into a constant input and grab
-  // that single value:
-  if (input && start && dim &&
-      llvm::all_of(outType.getSizes(), [](int64_t dim) { return dim == 1; })) {
-    bool unaryNonDim = true;
-    int64_t dimInt = dim.getValue().getSExtValue();
-    for (int i = 0, s = inType.getSizes().size(); i < s; ++i) {
-      unaryNonDim &= inType.getSizes()[i] == 1 || i == dimInt;
-    }
-    if (unaryNonDim) {
-      int64_t idx = start.getValue().getSExtValue();
-      if (idx < 0)
-        idx += input.getNumElements();
-      Attribute value = input.getValues<Attribute>()[idx];
-      return DenseElementsAttr::get(
-          outType.toBuiltinTensor().clone(inType.getDtype()), value);
-    }
+  int64_t dimInt = dim.getValue().getSExtValue();
+  if (dimInt < 0)
+    dimInt += inType.getSizes().size();
+
+  int count = 1;
+  for (auto dim : outType.getSizes())
+    count = count * dim;
+
+  if (count == 0)
+    return {};
+
+  bool unaryNonDim = true;
+  for (int i = 0, s = outType.getSizes().size(); i < s; ++i)
+    unaryNonDim &= outType.getSizes()[i] == 1 || i == dimInt;
+
+  // Fold the concatenation if the output tensor is relatively small, currently
+  // coded to 16:
+  if (input && start && dim && count < 16 && unaryNonDim && count < 16) {
+    int64_t inCount = input.getNumElements();
+    int64_t begin = start.getValue().getSExtValue();
+    int64_t stride = step.getValue().getSExtValue();
+    if (stride < 0)
+      return {};
+    int64_t limit = end.getValue().getSExtValue();
+    begin = begin < 0 ? begin + inCount : begin;
+    limit = limit < 0 ? limit + inCount : limit;
+    limit = limit < 0 ? inType.getSizes()[dimInt] : limit;
+    limit = std::min(limit, inType.getSizes()[dimInt]);
+
+    llvm::SmallVector<Attribute> values;
+    for (int i = begin; i < limit; i += stride)
+      values.push_back(input.getValues<Attribute>()[i]);
+
+    return DenseElementsAttr::get(
+        outType.toBuiltinTensor().clone(inType.getDtype()), values);
   }
 
   // If the input and output shapes are the same we can just fold:
