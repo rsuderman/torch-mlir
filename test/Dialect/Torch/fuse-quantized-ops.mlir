@@ -1,7 +1,7 @@
 // RUN: torch-mlir-opt %s --split-input-file --torch-fuse-quantized-ops | FileCheck %s
 
-// CHECK-LABEL: @mm
-func.func @mm(%arg0: !torch.vtensor<[4, 4],si8>, %arg1: !torch.vtensor<[4, 4],si8>) -> !torch.vtensor<[4, 4],f32> {
+// CHECK-LABEL: @mm_make
+func.func @mm_make(%arg0: !torch.vtensor<[4, 4],si8>, %arg1: !torch.vtensor<[4, 4],si8>) -> !torch.vtensor<[4, 4],f32> {
   %scale = torch.constant.float 0.5
   %false = torch.constant.bool false
   %zero = torch.constant.int 0
@@ -27,6 +27,38 @@ func.func @mm(%arg0: !torch.vtensor<[4, 4],si8>, %arg1: !torch.vtensor<[4, 4],si
 }
 
 // -----
+
+// CHECK-LABEL: @mm_quant
+func.func @mm_quant(%arg0: !torch.vtensor<[4, 4],f32>, %arg1: !torch.vtensor<[4, 4],f32>) -> !torch.vtensor<[4, 4],f32> {
+  %scale = torch.constant.float 0.5
+  %false = torch.constant.bool false
+  %zero = torch.constant.int 0
+  %one = torch.constant.int 1
+  %zp = torch.constant.int -128
+  %dtype = torch.constant.int 13
+  %6 = torch.aten.quantize_per_tensor %arg0, %scale, %one, %dtype : !torch.vtensor<[4, 4],f32>, !torch.float, !torch.int, !torch.int -> !torch.vtensor<[4, 4],!torch.qint8>
+  %12 = torch.aten.quantize_per_tensor %arg1, %scale, %zero, %dtype : !torch.vtensor<[4, 4],f32>, !torch.float, !torch.int, !torch.int -> !torch.vtensor<[4, 4],!torch.qint8>
+  %7 = torch.aten.dequantize.tensor %6 : !torch.vtensor<[4, 4],!torch.qint8> -> !torch.vtensor<[4, 4],f32>
+  %13 = torch.aten.dequantize.tensor %12 : !torch.vtensor<[4, 4],!torch.qint8> -> !torch.vtensor<[4, 4],f32>
+  %16 = torch.aten.mm %7, %13 : !torch.vtensor<[4, 4],f32>, !torch.vtensor<[4, 4],f32> -> !torch.vtensor<[4, 4],f32>
+
+  // CHECK-DAG: %[[ZERO:.+]] = torch.constant.int 0
+  // CHECK-DAG: %[[QUARTER:.+]] = torch.constant.float 2.500000e-01
+  // CHECK-DAG: %[[HALF:.+]] = torch.constant.float 5.000000e-01
+  // CHECK-DAG: %[[ONE:.+]] = torch.constant.int 1
+  // CHECK-DAG: %[[DTYPE:.+]] = torch.constant.int 13
+  // CHECK-DAG: %[[QLHS:.+]] = torch.aten.quantize_per_tensor %arg0, %[[HALF:.+]], %[[ONE]], %[[DTYPE]] : !torch.vtensor<[4,4],f32>, !torch.float, !torch.int, !torch.int -> !torch.vtensor<[4,4],!torch.qint8>
+  // CHECK-DAG: %[[QRHS:.+]] = torch.aten.quantize_per_tensor %arg1, %[[HALF:.+]], %[[ZERO]], %[[DTYPE]] : !torch.vtensor<[4,4],f32>, !torch.float, !torch.int, !torch.int -> !torch.vtensor<[4,4],!torch.qint8>
+  // CHECK-DAG: %[[MM:.+]] = torch.aten.mm %[[QLHS]], %[[QRHS]] : !torch.vtensor<[4,4],!torch.qint8>, !torch.vtensor<[4,4],!torch.qint8> -> !torch.vtensor<[4,4],!torch.qint32>
+  // CHECK-DAG: %[[INT:.+]] = torch.aten.int_repr %[[MM]] : !torch.vtensor<[4,4],!torch.qint32> -> !torch.vtensor<[4,4],si32>
+  // CHECK-DAG: %[[QOUT:.+]] = torch.aten._make_per_tensor_quantized_tensor %[[INT]], %[[QUARTER]], %[[ZERO]] : !torch.vtensor<[4,4],si32>, !torch.float, !torch.int -> !torch.vtensor<[4,4],!torch.qint32>
+  // CHECK: %[[OUT:.+]] = torch.aten.dequantize.tensor %[[QOUT]] : !torch.vtensor<[4,4],!torch.qint32> -> !torch.vtensor<[4,4],f32>
+  return %16 : !torch.vtensor<[4, 4],f32>
+}
+
+// -----
+
+
 
 // CHECK-LABEL: @convolution_bias
 func.func @convolution_bias(%arg0: !torch.vtensor<[1,3,8,8],si8>, %arg1: !torch.vtensor<[3,3,2,2],si8>, %arg2 : !torch.vtensor<[3], f32>) -> !torch.vtensor<[1,3,7,7],f32> {

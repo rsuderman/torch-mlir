@@ -68,10 +68,14 @@ public:
     if (auto qLhs =
             operands[0].getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>())
       lhsScale = qLhs.getScale();
+    if (auto qLhs = operands[0].getDefiningOp<AtenQuantizePerTensorOp>())
+      lhsScale = qLhs.getScale();
 
     Value rhsScale;
     if (auto qRhs =
             operands[1].getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>())
+      rhsScale = qRhs.getScale();
+    if (auto qRhs = operands[1].getDefiningOp<AtenQuantizePerTensorOp>())
       rhsScale = qRhs.getScale();
 
     if (!rhsScale || !lhsScale)
@@ -150,15 +154,17 @@ public:
 
     Value lhsScale;
     if (auto defining =
-            lhs.template getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>()) {
+            lhs.template getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>())
       lhsScale = defining.getScale();
-    }
+    if (auto defining = lhs.template getDefiningOp<AtenQuantizePerTensorOp>())
+      lhsScale = defining.getScale();
 
     Value rhsScale;
     if (auto defining =
-            rhs.template getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>()) {
+            rhs.template getDefiningOp<Aten_MakePerTensorQuantizedTensorOp>())
       rhsScale = defining.getScale();
-    }
+    if (auto defining = rhs.template getDefiningOp<AtenQuantizePerTensorOp>())
+      rhsScale = defining.getScale();
 
     if (!lhsScale || !rhsScale)
       return failure();
