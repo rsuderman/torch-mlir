@@ -852,7 +852,6 @@ public:
     Location loc = op.getLoc();
     Value input = adaptor.getSelf();
     auto inputType = input.getType().cast<RankedTensorType>();
-    SmallVector<Value> inputSize = getTensorSizes(rewriter, loc, input);
     int64_t inputRank = inputType.getRank();
     const TypeConverter *typeConverter = getTypeConverter();
     auto resultType =
@@ -999,6 +998,7 @@ public:
                   "(e.g. [-1, -1] -> [-1, -1, -1])");
         }
 
+        SmallVector<std::pair<int64_t, int64_t>> checkDimPairs;
         if (succeeded(mapAllDimsToSingleDim(inputShapeSlice, outputShapeSlice,
                                             inputSliceIndices,
                                             outputSliceIndices))) {
@@ -1021,11 +1021,9 @@ public:
           /// input and output dimensions in the slice statically
           /// known to have the same number of elements.
         } else if (inputShapeSlice[0] == kUnknownSize) {
-          // If the input is dynamic, assume it is not split
-          checkDimEqualHelper(rewriter, loc, inputSize[inputDim],
-                              outputSizeInt[outputDim]);
-          // If output dimension is not dynamic, improve static information of
-          // input
+          // Defer the dynamic shape check to avoid DialectConversion assertion:
+          checkDimPairs.push_back(std::pair<int64_t, int64_t>(inputDim, outputDim));
+
           inputShape[inputDim] = outputShape[outputDim];
           inputSliceIndices.push_back(0);
           outputSliceIndices.push_back(0);
@@ -1071,6 +1069,15 @@ public:
         }
         outputAssociations.back().push_back(outputDim++);
       }
+    }
+
+    SmallVector<Value> inputSize = getTensorSizes(rewriter, loc, input);
+    for (auto pair : checkDimPairs) {
+      // Check that dynamic shapes for reshape evaluate to the correct sizes:
+      auto inputDim = std::get<0>(pair);
+      auto outputDim = std::get<1>(pair);
+      checkDimEqualHelper(rewriter, loc, inputSize[inputDim],
+                          outputSizeInt[outputDim]);
     }
 
     auto cast = [&](Location loc, Type t, Value v) -> Value {
