@@ -892,12 +892,6 @@ public:
       return rewriter.notifyMatchFailure(
           op, "at most one element in size list is allowed to be -1");
     }
-    SmallVector<Value> outputSizeInt = getTypeConvertedValues(
-        rewriter, loc, typeConverter, outputSizeTorchInt);
-    if (resultRank != (int64_t)outputSizeInt.size()) {
-      return rewriter.notifyMatchFailure(
-          op, "desired size list length mismatches with the result type rank");
-    }
 
     auto [inputShape, outputShape] =
         getInputAndOutputShape(op.getSelf(), outputSizeTorchInt);
@@ -974,6 +968,7 @@ public:
     // For more information, see description of helper functions used in the
     // `if-else` cases inside the while loop.
     int64_t inputDim = 0, outputDim = 0;
+    SmallVector<std::pair<int64_t, int64_t>> checkDimPairs;
     for (auto [nextUnchangedInput, nextUnchangedOutput] : unchangedDims) {
       // Used for ensuring that we don't have an ambiguous expansion
       bool assumedDynamicDimNotSplit = false;
@@ -998,7 +993,6 @@ public:
                   "(e.g. [-1, -1] -> [-1, -1, -1])");
         }
 
-        SmallVector<std::pair<int64_t, int64_t>> checkDimPairs;
         if (succeeded(mapAllDimsToSingleDim(inputShapeSlice, outputShapeSlice,
                                             inputSliceIndices,
                                             outputSliceIndices))) {
@@ -1072,6 +1066,14 @@ public:
     }
 
     SmallVector<Value> inputSize = getTensorSizes(rewriter, loc, input);
+
+    SmallVector<Value> outputSizeInt = getTypeConvertedValues(
+        rewriter, loc, typeConverter, outputSizeTorchInt);
+    if (resultRank != (int64_t)outputSizeInt.size()) {
+      return rewriter.notifyMatchFailure(
+          op, "desired size list length mismatches with the result type rank");
+    }
+
     for (auto pair : checkDimPairs) {
       // Check that dynamic shapes for reshape evaluate to the correct sizes:
       auto inputDim = std::get<0>(pair);
