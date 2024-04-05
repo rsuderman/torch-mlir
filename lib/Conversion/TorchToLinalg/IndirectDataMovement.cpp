@@ -470,12 +470,13 @@ public:
     Location loc = op.getLoc();
     Value input = adaptor.getSelf();
     Value indices = adaptor.getIndex();
-    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
-    RankedTensorType resultType = getTypeConverter()
-                                      ->convertType(op->getResult(0).getType())
-                                      .cast<RankedTensorType>();
+    RankedTensorType inputType = cast<RankedTensorType>(input.getType());
+    RankedTensorType indicesType = cast<RankedTensorType>(indices.getType());
+    RankedTensorType resultType = cast<RankedTensorType>(
+        getTypeConverter()->convertType(op->getResult(0).getType()));
     Type elementType = resultType.getElementType();
-    unsigned inputRank = inputType.getRank();
+    int64_t inputRank = inputType.getRank();
+    int64_t indicesRank = indicesType.getRank();
 
     int64_t dimInt;
     if (!matchPattern(op.getDim(), m_TorchConstantInt(&dimInt)))
@@ -485,18 +486,27 @@ public:
       return rewriter.notifyMatchFailure(op, "dim is statically invalid");
 
     SmallVector<Value> resultShape = getTensorSizes(rewriter, loc, input);
-    resultShape[dimInt] = getTensorSizes(rewriter, loc, indices)[0];
+
+    if (indicesRank == 0) {
+      resultShape[dimInt] = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    } else {
+      resultShape[dimInt] = rewriter.create<tensor::DimOp>(loc, indices, 0);
+    }
+
     Value initTensor = rewriter.create<tensor::EmptyOp>(
         loc, getAsOpFoldResult(resultShape), elementType);
 
     SmallVector<AffineExpr> resultExpr;
-    AffineExpr indicesExpr = rewriter.getAffineDimExpr(dimInt);
+    SmallVector<AffineExpr> indicesExpr;
     SmallVector<utils::IteratorType> iteratorTypes(
         inputRank, utils::IteratorType::parallel);
 
     for (unsigned i = 0; i < inputRank; i++) {
       resultExpr.push_back(rewriter.getAffineDimExpr(i));
     }
+
+    if (indicesRank != 0)
+      indicesExpr.push_back(rewriter.getAffineDimExpr(dimInt));
 
     auto indexingMaps = AffineMap::inferFromExprList({indicesExpr, resultExpr},
                                                      rewriter.getContext());

@@ -2241,10 +2241,10 @@ void mlir::torch::torch_to_linalg::populateDataMovementPatternsAndLegality(
   patterns.add<ConvertAtenReflectionPad2dOp>(typeConverter, context);
   target.addIllegalOp<AtenFlattenUsingIntsOp>();
   patterns.add<ConvertAtenFlattenUsingIntsOp>(typeConverter, context);
-  target.addIllegalOp<AtenViewOp>();
-  patterns.add<ConvertAtenUnflattenIntOp>(typeConverter, context);
   target.addIllegalOp<AtenUnflattenIntOp>();
-  patterns.add<ConvertAtenViewOp>(typeConverter, context);
+  patterns.add<ConvertAtenUnflattenIntOp>(typeConverter, context);
+  // target.addIllegalOp<AtenViewOp>();
+  // patterns.add<ConvertAtenViewOp>(typeConverter, context);
   target.addIllegalOp<AtenSqueezeOp>();
   patterns.add<ConvertAtenSqueezeOp>(typeConverter, context);
   target.addIllegalOp<AtenSqueezeDimOp>();

@@ -778,12 +778,13 @@ public:
         loc, rewriter.getI64IntegerAttr(0));
     Value one = rewriter.create<Torch::ConstantIntOp>(
         loc, rewriter.getI64IntegerAttr(1));
-    llvm::SmallVector<int64_t> valuesShape{valuesType.getSizes().front()};
+    llvm::SmallVector<int64_t> valuesShape;
     llvm::SmallVector<Value> valuesDims;
-    valuesDims.push_back(
-        rewriter.create<Torch::AtenSizeIntOp>(loc, values, zero));
+    // valuesShape.push_back(valuesType.getSizes().front());
+    // valuesDims.push_back(
+    //     rewriter.create<Torch::AtenSizeIntOp>(loc, values, zero));
 
-    int vDim = 1;
+    int vDim = 0;
     for (int i = 0, s = inputType.getSizes().size(); i < s; ++i) {
       if (i < optionalIndicesCount &&
           !isa<Torch::NoneType>(optionalIndicesList[i].getType())) {
@@ -808,6 +809,10 @@ public:
         valuesShape, valuesType.getOptionalDtype());
     values =
         rewriter.create<AtenViewOp>(loc, valuesType, values, valuesDimsList);
+    llvm::errs() << "Printing torch inputs\n";
+    values.dump();
+    indices.dump();
+    input.dump();
 
     // `TMTensor::ScatterOp` expects indices of element type i32.
     indices = convertTensorToDtype(
