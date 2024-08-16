@@ -1271,7 +1271,9 @@ static Value createLinalgPayloadCalculationForElementwiseOp(
 
     if (isa<mlir::FloatType>(newResultType)) {
       Value n = b.create<arith::DivFOp>(loc, self, other);
-      n = b.create<math::TruncOp>(loc, n);
+      Value abs = b.create<math::AbsFOp>(loc, n);
+      abs = b.create<math::FloorOp>(loc, abs);
+      n = b.create<math::CopySignOp>(loc, abs, n);
       Value n_y = b.create<arith::MulFOp>(loc, n, other);
       result = b.create<arith::SubFOp>(loc, self, n_y);
     } else if (isa<mlir::IntegerType>(newResultType)) {
