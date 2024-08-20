@@ -1007,6 +1007,38 @@ func.func @test_conv_with_strides_no_padding(%arg0: !torch.vtensor<[1,1,7,5],f32
 
 // -----
 
+// CHECK-LABEL: @test_conv_with_autopad_same
+func.func @test_conv_with_autopad_same(%arg0: !torch.vtensor<[1,1,5,5],f32>, %arg1: !torch.vtensor<[1,1,3,3],f32>) -> !torch.vtensor<[1,1,3,3],f32> attributes {torch.onnx_meta.ir_version = 10 : si64, torch.onnx_meta.opset_version = 22 : si64} {
+  // CHECK: %[[PAD0:.+]] = torch.constant.int 1
+  // CHECK: %[[PAD1:.+]] = torch.constant.int 2
+  // CHECK: %[[NOPAD0:.+]] = torch.constant.int 0
+  // CHECK: %[[PAD2:.+]] = torch.constant.int 1
+  // CHECK: %[[PAD3:.+]] = torch.constant.int 2
+  // CHECK: %[[NOPAD1:.+]] = torch.constant.int 0
+  // CHECK: %[[NOPAD:.+]] = torch.prim.ListConstruct %[[NOPAD0]], %[[NOPAD1]]
+  // CHECK: %[[PADV:.+]] = torch.prim.ListConstruct %[[PAD0]], %[[PAD1]], %[[PAD2]], %[[PAD3]]
+  // CHECK: %[[MODE:.+]] = torch.constant.str "constant"
+  // CHECK: %[[ZERO:.+]] = torch.constant.float 0.000000e+00
+  // CHECK: %[[PAD:.+]] = torch.aten.pad %arg0, %[[PADV]], %[[MODE]], %[[ZERO]]
+  // CHECK: %[[DILATION0:.+]] = torch.constant.int 1
+  // CHECK: %[[DILATION1:.+]] = torch.constant.int 1
+  // CHECK: %[[STRIDE0:.+]] = torch.constant.int 2
+  // CHECK: %[[STRIDE1:.+]] = torch.constant.int 2
+  // CHECK: %[[OUTPAD0:.+]] = torch.constant.int 0
+  // CHECK: %[[DILATION:.+]] = torch.prim.ListConstruct %[[DILATION0]], %[[DILATION1]]
+  // CHECK: %[[STRIDE:.+]] = torch.prim.ListConstruct %[[STRIDE0]], %[[STRIDE1]]
+  // CHECK: %[[OUTPAD:.+]] = torch.prim.ListConstruct %[[OUTPAD0]], %[[OUTPAD0]]
+  // CHECK: %[[TRANSPOSED:.+]] = torch.constant.bool false
+  // CHECK: %[[NONE:.+]] = torch.constant.none
+  // CHECK: %[[GROUPS:.+]] = torch.constant.int 1
+  // CHECK: %[[CONV:.+]] = torch.aten.convolution %[[PAD]], %arg1, %[[NONE]], %[[STRIDE]], %[[NOPAD]], %[[DILATION]], %[[TRANSPOSED]], %[[OUTPAD]], %[[GROUPS]]
+  // CHECK: return %[[CONV]]
+  %0 = torch.operator "onnx.Conv"(%arg0, %arg1) {torch.onnx.auto_pad = "SAME_LOWER", torch.onnx.kernel_shape = [3 : si64, 3 : si64], torch.onnx.strides = [2 : si64, 2 : si64]} : (!torch.vtensor<[1,1,5,5],f32>, !torch.vtensor<[1,1,3,3],f32>) -> !torch.vtensor<[1,1,3,3],f32> 
+  return %0 : !torch.vtensor<[1,1,3,3],f32>
+}
+
+// -----
+
 // CHECK-LABEL: @test_conv_with_strides_padding
 func.func @test_conv_with_strides_padding(%arg0: !torch.vtensor<[1,1,7,5],f32>, %arg1: !torch.vtensor<[1,1,3,3],f32>) -> !torch.vtensor<[1,1,4,3],f32> attributes {torch.onnx_meta.ir_version = 6 : si64, torch.onnx_meta.opset_version = 11 : si64, torch.onnx_meta.producer_name = "backend-test", torch.onnx_meta.producer_version = ""} {
   // CHECK: %[[C1:.*]] = torch.constant.int 1

@@ -1295,11 +1295,6 @@ void mlir::torch::onnx_c::populateDefaultDomainAtoF(
         std::string autoPad;
         if (binder.customOpNameStringAttr(autoPad, "auto_pad", "NOTSET"))
           return failure();
-        if (autoPad != "NOTSET") {
-          // TODO: Add support for `auto_pad` != "NOTSET"
-          return rewriter.notifyMatchFailure(
-              binder.op, "unsupported conversion: auto_pad != NOTSET");
-        }
         Torch::ValueTensorType resultType;
         Value input, weight;
         int64_t group;
@@ -1309,6 +1304,7 @@ void mlir::torch::onnx_c::populateDefaultDomainAtoF(
             binder.tensorResultType(resultType))
           return failure();
 
+        auto inputTensorType = cast<Torch::ValueTensorType>(input.getType());
         auto weightTensorType = cast<Torch::ValueTensorType>(weight.getType());
         if (!weightTensorType || !weightTensorType.hasSizes()) {
           return rewriter.notifyMatchFailure(
@@ -1378,6 +1374,40 @@ void mlir::torch::onnx_c::populateDefaultDomainAtoF(
         if (strides.size() != rank - 2) {
           return rewriter.notifyMatchFailure(
               binder.op, "strides list size does not match the number of axes");
+        }
+
+        if (autoPad == "SAME_UPPER") {
+          padding.resize(2 * (rank - 2));
+          for (int i = 0; i < rank - 2; ++i) {
+            int d = i + 2;
+            if (resultType.getSizes()[i] == Torch::kUnknownSize ||
+                inputTensorType.getSizes()[i] == Torch::kUnknownSize) {
+              return rewriter.notifyMatchFailure(
+                  binder.op, "not implemented for dynamic widths / height");
+            }
+            int64_t totalPad = resultType.getSizes()[d] * strides[i] -
+                               inputTensorType.getSizes()[d] + kernelShape[i] -
+                               1;
+            padding[i] = (totalPad + 1) / 2;
+            padding[i + rank - 2] = totalPad / 2;
+          }
+        } else if (autoPad == "SAME_LOWER") {
+          padding.resize(2 * (rank - 2));
+          for (int i = 0; i < rank - 2; ++i) {
+            int d = i + 2;
+            if (resultType.getSizes()[i] == Torch::kUnknownSize ||
+                inputTensorType.getSizes()[i] == Torch::kUnknownSize) {
+              return rewriter.notifyMatchFailure(
+                  binder.op, "not implemented for dynamic widths / height");
+            }
+            int64_t totalPad = resultType.getSizes()[d] * strides[i] -
+                               inputTensorType.getSizes()[d] + kernelShape[i] -
+                               1;
+            padding[i] = (totalPad) / 2;
+            padding[i + rank - 2] = (totalPad + 1) / 2;
+          }
+        } else if (autoPad != "NOTSET") {
+          return rewriter.notifyMatchFailure(binder.op, "unsupported pad mode");
         }
 
         SmallVector<Value> cstPadding, cstStrides, cstDilations,
